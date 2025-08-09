@@ -1,0 +1,381 @@
+ORG 0000H
+
+; LCD control pins
+RS  EQU P2.1
+EN  EQU P2.2
+
+; Button Pins
+CONTROL_SW EQU P3.0
+C1_SW      EQU P3.1
+C2_SW      EQU P3.2
+C3_SW      EQU P3.3
+
+; Data memory locations for vote counts
+C1_COUNT  EQU 30H
+C2_COUNT  EQU 31H
+C3_COUNT  EQU 32H
+
+START:  
+    MOV C1_COUNT, #00H
+    MOV C2_COUNT, #00H
+    MOV C3_COUNT, #00H
+
+    ACALL LCD_INIT
+    ACALL DISPLAY_COUNTS
+
+MAIN_LOOP:
+    JB CONTROL_SW, MAIN_LOOP   ; Wait until control switch pressed (active low)
+    ACALL DEBOUNCE
+
+    ; Wait for contestant button press
+WAIT_FOR_VOTE:
+    JNB C1_SW, VOTE_C1
+    JNB C2_SW, VOTE_C2
+    JNB C3_SW, VOTE_C3
+    SJMP WAIT_FOR_VOTE
+
+VOTE_C1:
+    INC C1_COUNT
+    ACALL DISPLAY_COUNTS
+    ACALL WAIT_RELEASE
+    SJMP MAIN_LOOP
+
+VOTE_C2:
+    INC C2_COUNT
+    ACALL DISPLAY_COUNTS
+    ACALL WAIT_RELEASE
+    SJMP MAIN_LOOP
+
+VOTE_C3:
+    INC C3_COUNT
+    ACALL DISPLAY_COUNTS
+    ACALL WAIT_RELEASE
+    SJMP MAIN_LOOP
+
+WAIT_RELEASE:
+    ; Wait for all buttons to be released
+    JB C1_SW, CHECK_C2
+    SJMP WAIT_RELEASE
+CHECK_C2:
+    JB C2_SW, CHECK_C3
+    SJMP WAIT_RELEASE
+CHECK_C3:
+    JB C3_SW, CHECK_CTRL
+    SJMP WAIT_RELEASE
+CHECK_CTRL:
+    JB CONTROL_SW, RETURN_RELEASE
+    SJMP WAIT_RELEASE
+RETURN_RELEASE:
+    ACALL DEBOUNCE
+    RET
+
+; --- LCD routines ---
+LCD_INIT:
+    MOV A, #38H     
+    ACALL LCD_CMD
+    MOV A, #0CH     
+    ACALL LCD_CMD
+    MOV A, #06H     
+    ACALL LCD_CMD
+    MOV A, #01H     
+    ACALL LCD_CMD
+    RET
+
+LCD_CMD:
+    MOV P1, A
+    CLR RS
+    SETB EN
+    ACALL DELAY
+    CLR EN
+    ACALL DELAY
+    RET
+
+LCD_DATA:
+    MOV P1, A
+    SETB RS
+    SETB EN
+    ACALL DELAY
+    CLR EN
+    ACALL DELAY
+    RET
+
+DISPLAY_COUNTS:
+    MOV A, #01H
+    ACALL LCD_CMD
+    MOV A, #80H
+    ACALL LCD_CMD
+
+    ; Display C1
+    MOV A, #'C'
+    ACALL LCD_DATA
+    MOV A, #'1'
+    ACALL LCD_DATA
+    MOV A, #':'
+    ACALL LCD_DATA
+    MOV A, C1_COUNT
+    ACALL DISPLAY_2DIGIT
+
+    ; Display C2
+    MOV A, #' '
+    ACALL LCD_DATA
+    MOV A, #'C'
+    ACALL LCD_DATA
+    MOV A, #'2'
+    ACALL LCD_DATA
+    MOV A, #':'
+    ACALL LCD_DATA
+    MOV A, C2_COUNT
+    ACALL DISPLAY_2DIGIT
+
+    ; Move to second line and display C3
+    MOV A, #0C0H
+    ACALL LCD_CMD
+    MOV A, #'C'
+    ACALL LCD_DATA
+    MOV A, #'3'
+    ACALL LCD_DATA
+    MOV A, #':'
+    ACALL LCD_DATA
+    MOV A, C3_COUNT
+    ACALL DISPLAY_2DIGIT
+    RET
+
+; Display two-digit number
+DISPLAY_2DIGIT:
+    MOV B, #10
+    DIV AB
+    ADD A, #30H
+    ACALL LCD_DATA   ; Tens place
+    MOV A, B
+    ADD A, #30H
+    ACALL LCD_DATA   ; Units place
+    RET
+
+DELAY:
+    MOV R7, #250
+D1: MOV R6, #250
+D2: DJNZ R6, D2
+    DJNZ R7, D1
+    RET
+
+DEBOUNCE:
+    ; Small delay for debounce
+    MOV R5, #50
+D3: MOV R4, #255
+D4: DJNZ R4, D4
+    DJNZ R5, D3
+    RET
+
+END
+
+
+
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ORG 0000H
+
+; LCD control pins
+RS  EQU P2.1
+EN  EQU P2.2
+BUZZER EQU P2.0   ; Buzzer pin
+
+; Button Pins
+CONTROL_SW EQU P3.0
+C1_SW      EQU P3.1
+C2_SW      EQU P3.2
+C3_SW      EQU P3.3
+
+; Data memory locations for vote counts
+C1_COUNT  EQU 30H
+C2_COUNT  EQU 31H
+C3_COUNT  EQU 32H
+
+START:  
+    MOV C1_COUNT, #00H
+    MOV C2_COUNT, #00H
+    MOV C3_COUNT, #00H
+
+    CLR BUZZER  ; Ensure buzzer off
+    ACALL LCD_INIT
+    ACALL DISPLAY_COUNTS
+
+MAIN_LOOP:
+    JB CONTROL_SW, MAIN_LOOP   ; Wait for control switch
+    ACALL DEBOUNCE
+    ACALL BUZZER_ON            ; Play buzzer after control press
+    ACALL BUZZER_OFF
+
+WAIT_FOR_VOTE:
+    JNB C1_SW, VOTE_C1
+    JNB C2_SW, VOTE_C2
+    JNB C3_SW, VOTE_C3
+    SJMP WAIT_FOR_VOTE
+
+VOTE_C1:
+    INC C1_COUNT
+    MOV DPTR, #MSG_C1
+    ACALL SHOW_VOTE_MSG
+    ACALL WAIT_RELEASE
+    ACALL DISPLAY_COUNTS
+    SJMP MAIN_LOOP
+
+VOTE_C2:
+    INC C2_COUNT
+    MOV DPTR, #MSG_C2
+    ACALL SHOW_VOTE_MSG
+    ACALL WAIT_RELEASE
+    ACALL DISPLAY_COUNTS
+    SJMP MAIN_LOOP
+
+VOTE_C3:
+    INC C3_COUNT
+    MOV DPTR, #MSG_C3
+    ACALL SHOW_VOTE_MSG
+    ACALL WAIT_RELEASE
+    ACALL DISPLAY_COUNTS
+    SJMP MAIN_LOOP
+
+WAIT_RELEASE:
+    JB CONTROL_SW, RETURN_RELEASE
+    JB C1_SW, WAIT_RELEASE
+    JB C2_SW, WAIT_RELEASE
+    JB C3_SW, WAIT_RELEASE
+    SJMP WAIT_RELEASE
+
+RETURN_RELEASE:
+    ACALL DEBOUNCE
+    RET
+
+BUZZER_ON:
+    SETB BUZZER
+    ACALL DELAY
+    RET
+
+BUZZER_OFF:
+    CLR BUZZER
+    RET
+
+; --- LCD routines ---
+LCD_INIT:
+    MOV A, #38H    ; 8-bit mode, 2-line, 5x8 font (default) 
+    ACALL LCD_CMD
+    MOV A, #0CH    ; Display ON, Cursor OFF
+    ACALL LCD_CMD
+    MOV A, #06H    ; Increment cursor position (default)
+    ACALL LCD_CMD
+    MOV A, #01H    ; Clear display
+    ACALL LCD_CMD
+    RET
+
+LCD_CMD:
+    MOV P1, A
+    CLR RS
+    SETB EN
+    ACALL DELAY
+    CLR EN
+    ACALL DELAY
+    RET
+
+LCD_DATA:
+    MOV P1, A
+    SETB RS
+    SETB EN
+    ACALL DELAY
+    CLR EN
+    ACALL DELAY
+    RET
+
+DISPLAY_COUNTS:
+    MOV A, #01H    ; Clear display
+    ACALL LCD_CMD
+    MOV A, #80H    ; Move cursor to start
+    ACALL LCD_CMD
+
+    ; Display C1
+    MOV A, #'C'
+    ACALL LCD_DATA
+    MOV A, #'1'
+    ACALL LCD_DATA
+    MOV A, #':'
+    ACALL LCD_DATA
+    MOV A, C1_COUNT
+    ACALL DISPLAY_2DIGIT
+
+    ; Display C2
+    MOV A, #' '
+    ACALL LCD_DATA
+    MOV A, #'C'
+    ACALL LCD_DATA
+    MOV A, #'2'
+    ACALL LCD_DATA
+    MOV A, #':'
+    ACALL LCD_DATA
+    MOV A, C2_COUNT
+    ACALL DISPLAY_2DIGIT
+
+    ; Move to second line and display C3
+    MOV A, #0C0H
+    ACALL LCD_CMD
+    MOV A, #'C'
+    ACALL LCD_DATA
+    MOV A, #'3'
+    ACALL LCD_DATA
+    MOV A, #':'
+    ACALL LCD_DATA
+    MOV A, C3_COUNT
+    ACALL DISPLAY_2DIGIT
+    RET
+
+DISPLAY_2DIGIT:
+    MOV B, #10      
+    DIV AB
+    ADD A, #30H
+    ACALL LCD_DATA   ; Tens place
+    MOV A, B
+    ADD A, #30H
+    ACALL LCD_DATA   ; Units place
+    RET
+
+SHOW_VOTE_MSG:
+    MOV A, #01H   ; Clear display
+    ACALL LCD_CMD
+    MOV A, #80H   ; Move cursor to first line
+    ACALL LCD_CMD
+
+NEXT_CHAR:
+    CLR A
+    MOVC A, @A+DPTR
+    JZ END_MSG    ; Stop when NULL is reached
+    ACALL LCD_DATA
+    INC DPTR
+    SJMP NEXT_CHAR
+
+END_MSG:
+    ACALL DELAY
+    ACALL DELAY
+    RET
+
+DELAY:
+   MOV R7, #150
+  D1:MOV R6, #100
+D2: DJNZ R6, D2
+    DJNZ R7, D1
+    RET
+
+DEBOUNCE:
+    MOV R5, #50
+D3: MOV R4, #150
+D4: DJNZ R4, D4
+    DJNZ R5, D3
+    RET
+
+; --- Voting Messages ---
+MSG_C1: DB 'You Voted C1', 0
+MSG_C2: DB 'You Voted C2', 0
+MSG_C3: DB 'You Voted C3', 0
+
+END
